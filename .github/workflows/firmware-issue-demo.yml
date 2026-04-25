@@ -1,11 +1,11 @@
-name: Firmware Issue Demo
-
-on:
+  name: Firmware Issue Demo
+  
+  on:
   issues:
     types:
       - opened
-
-jobs:
+  
+  jobs:
   inspect-issue:
     runs-on: ubuntu-latest
     steps:
@@ -15,11 +15,11 @@ jobs:
           echo "Issue title: ${{ github.event.issue.title }}"
           echo "Issue number: ${{ github.event.issue.number }}"
           echo "Issue state: ${{ github.event.issue.state }}"
-
+  
       - name: Print labels JSON
         run: |
           echo 'Labels payload: ${{ toJson(github.event.issue.labels) }}'
-
+  
       - name: Check firmware label
         id: check-firmware
         uses: actions/github-script@v7
@@ -27,17 +27,67 @@ jobs:
           script: |
             const labels = (context.payload.issue.labels || []).map(label => label.name);
             const hasFirmwareLabel = labels.includes("firmware");
-
+  
             core.info(`Parsed labels: ${labels.join(", ") || "(none)"}`);
             core.info(`Firmware label present: ${hasFirmwareLabel}`);
             core.setOutput("has_firmware_label", String(hasFirmwareLabel));
-
-      - name: Continue for firmware issues
-        if: steps.check-firmware.outputs.has_firmware_label == 'true'
-        run: |
-          echo "This issue qualifies for firmware automation."
-          echo "Next step would be adding it to a GitHub Project."
-
+  
+      - name: Add firmware issue to Project v2
+  if: steps.check-firmware.outputs.has_firmware_label == 'true'
+  uses: actions/github-script@v7
+  env:
+    PROJECT_OWNER: FleabagEE
+    PROJECT_NUMBER: 1
+  with:
+    github-token: ${{ secrets.PROJECTS_TOKEN }}
+    script: |
+      const owner = process.env.PROJECT_OWNER;
+      const projectNumber = parseInt(process.env.PROJECT_NUMBER, 10);
+      const contentId = context.payload.issue.node_id;
+  
+      const projectQuery = `
+        query($login: String!, $number: Int!) {
+          user(login: $login) {
+            projectV2(number: $number) {
+              id
+              title
+            }
+          }
+        }
+      `;
+  
+      const projectResult = await github.graphql(projectQuery, {
+        login: owner,
+        number: projectNumber,
+      });
+  
+      const project = projectResult.user?.projectV2;
+      if (!project) {
+        core.setFailed(`Project not found: ${owner} / ${projectNumber}`);
+        return;
+      }
+  
+      core.info(`Found project: ${project.title} (${project.id})`);
+      core.info(`Issue contentId: ${contentId}`);
+  
+      const addItemMutation = `
+        mutation($projectId: ID!, $contentId: ID!) {
+          addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+            item {
+              id
+            }
+          }
+        }
+      `;
+  
+      const addResult = await github.graphql(addItemMutation, {
+        projectId: project.id,
+        contentId,
+      });
+  
+      core.info(`Added item to project. Item id: ${addResult.addProjectV2ItemById.item.id}`);
+  
+  
       - name: Skip non-firmware issues
         if: steps.check-firmware.outputs.has_firmware_label != 'true'
         run: |
