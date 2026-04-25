@@ -1,4 +1,4 @@
- name: Firmware Issue Demo
+name: Firmware Issue Demo
 
 on:
   issues:
