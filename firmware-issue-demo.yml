@@ -1,0 +1,45 @@
+name: Firmware Issue Demo
+
+on:
+  issues:
+    types:
+      - opened
+
+jobs:
+  inspect-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print issue context
+        run: |
+          echo "Firmware issue demo workflow triggered"
+          echo "Issue title: ${{ github.event.issue.title }}"
+          echo "Issue number: ${{ github.event.issue.number }}"
+          echo "Issue state: ${{ github.event.issue.state }}"
+
+      - name: Print labels JSON
+        run: |
+          echo 'Labels payload: ${{ toJson(github.event.issue.labels) }}'
+
+      - name: Check firmware label
+        id: check-firmware
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = (context.payload.issue.labels || []).map(label => label.name);
+            const hasFirmwareLabel = labels.includes("firmware");
+
+            core.info(`Parsed labels: ${labels.join(", ") || "(none)"}`);
+            core.info(`Firmware label present: ${hasFirmwareLabel}`);
+            core.setOutput("has_firmware_label", String(hasFirmwareLabel));
+
+      - name: Continue for firmware issues
+        if: steps.check-firmware.outputs.has_firmware_label == 'true'
+        run: |
+          echo "This issue qualifies for firmware automation."
+          echo "Next step would be adding it to a GitHub Project."
+
+      - name: Skip non-firmware issues
+        if: steps.check-firmware.outputs.has_firmware_label != 'true'
+        run: |
+          echo "This issue does not have the firmware label."
+          echo "Skipping automation for now."
