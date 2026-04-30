@@ -20,7 +20,7 @@ jobs:
         run: |
           echo 'Labels payload: ${{ toJson(github.event.issue.labels) }}'
 
-            - name: Check firmware label
+      - name: Check firmware label
         id: check-firmware
         uses: actions/github-script@v7
         with:
