@@ -15,6 +15,7 @@ jobs:
       - name: Print issue context
         run: |
           echo "Firmware issue demo workflow triggered"
+          echo "Event action: ${{ github.event.action }}"
           echo "Issue title: ${{ github.event.issue.title }}"
           echo "Issue number: ${{ github.event.issue.number }}"
           echo "Issue state: ${{ github.event.issue.state }}"
