@@ -78,7 +78,7 @@ jobs:
 
             core.info(JSON.stringify(result, null, 2));
 
-      - name: Add firmware issue to Project v2
+            - name: Add firmware issue to Project v2
         if: steps.check-firmware.outputs.has_firmware_label == 'true'
         uses: actions/github-script@v7
         env:
@@ -90,6 +90,7 @@ jobs:
             const owner = process.env.PROJECT_OWNER;
             const projectNumber = parseInt(process.env.PROJECT_NUMBER, 10);
             const contentId = context.payload.issue.node_id;
+            const labels = (context.payload.issue.labels || []).map(label => label.name);
 
             const projectQuery = `
               query($login: String!, $number: Int!) {
@@ -131,10 +132,51 @@ jobs:
               contentId,
             });
 
-            core.info(`Added item to project. Item id: ${addResult.addProjectV2ItemById.item.id}`);
+            const itemId = addResult.addProjectV2ItemById.item.id;
+            core.info(`Added item to project. Item id: ${itemId}`);
 
-      - name: Skip non-firmware issues
-        if: steps.check-firmware.outputs.has_firmware_label != 'true'
-        run: |
-          echo "This issue does not have the firmware label."
-          echo "Skipping automation for now."
+            const updateFieldMutation = `
+              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                updateProjectV2ItemFieldValue(
+                  input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                    fieldId: $fieldId
+                    value: { singleSelectOptionId: $optionId }
+                  }
+                ) {
+                  projectV2Item {
+                    id
+                  }
+                }
+              }
+            `;
+
+            await github.graphql(updateFieldMutation, {
+              projectId: project.id,
+              itemId,
+              fieldId: "PVTSSF_lAHOB35cU84BVt7yzhRHvjg",
+              optionId: "f75ad846",
+            });
+
+            core.info("Set Status to Todo");
+
+            if (labels.includes("bug")) {
+              await github.graphql(updateFieldMutation, {
+                projectId: project.id,
+                itemId,
+                fieldId: "PVTSSF_lAHOB35cU84BVt7yzhRmEhQ",
+                optionId: "a1209999",
+              });
+
+              core.info("Set Priority to High");
+            } else if (labels.includes("enhancement")) {
+              await github.graphql(updateFieldMutation, {
+                projectId: project.id,
+                itemId,
+                fieldId: "PVTSSF_lAHOB35cU84BVt7yzhRmEhQ",
+                optionId: "bbd13c4a",
+              });
+
+              core.info("Set Priority to Medium");
+            }
