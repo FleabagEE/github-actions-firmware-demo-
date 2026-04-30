@@ -32,53 +32,7 @@ jobs:
             core.info(`Firmware label present: ${hasFirmwareLabel}`);
             core.setOutput("has_firmware_label", String(hasFirmwareLabel));
 
-      - name: Debug project fields
-        if: steps.check-firmware.outputs.has_firmware_label == 'true'
-        uses: actions/github-script@v7
-        env:
-          PROJECT_OWNER: FleabagEE
-          PROJECT_NUMBER: "1"
-        with:
-          github-token: ${{ secrets.PROJECTS_TOKEN }}
-          script: |
-            const owner = process.env.PROJECT_OWNER;
-            const projectNumber = parseInt(process.env.PROJECT_NUMBER, 10);
-
-            const query = `
-              query($login: String!, $number: Int!) {
-                user(login: $login) {
-                  projectV2(number: $number) {
-                    id
-                    title
-                    fields(first: 20) {
-                      nodes {
-                        ... on ProjectV2Field {
-                          id
-                          name
-                        }
-                        ... on ProjectV2SingleSelectField {
-                          id
-                          name
-                          options {
-                            id
-                            name
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            `;
-
-            const result = await github.graphql(query, {
-              login: owner,
-              number: projectNumber,
-            });
-
-            core.info(JSON.stringify(result, null, 2));
-
-            - name: Add firmware issue to Project v2
+      - name: Add firmware issue to Project v2 and populate fields
         if: steps.check-firmware.outputs.has_firmware_label == 'true'
         uses: actions/github-script@v7
         env:
@@ -168,7 +122,6 @@ jobs:
                 fieldId: "PVTSSF_lAHOB35cU84BVt7yzhRmEhQ",
                 optionId: "a1209999",
               });
-
               core.info("Set Priority to High");
             } else if (labels.includes("enhancement")) {
               await github.graphql(updateFieldMutation, {
@@ -177,6 +130,11 @@ jobs:
                 fieldId: "PVTSSF_lAHOB35cU84BVt7yzhRmEhQ",
                 optionId: "bbd13c4a",
               });
-
               core.info("Set Priority to Medium");
             }
+
+      - name: Skip non-firmware issues
+        if: steps.check-firmware.outputs.has_firmware_label != 'true'
+        run: |
+          echo "This issue does not have the firmware label."
+          echo "Skipping automation for now."
