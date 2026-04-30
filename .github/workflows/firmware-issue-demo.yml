@@ -16,9 +16,11 @@ jobs:
           echo "Issue number: ${{ github.event.issue.number }}"
           echo "Issue state: ${{ github.event.issue.state }}"
 
-      - name: Print labels JSON
+      - name: Print labels summary
         run: |
-          echo 'Labels payload: ${{ toJson(github.event.issue.labels) }}'
+          echo "Labels count: ${{ github.event.issue.labels && github.event.issue.labels.size || 0 }}"
+          echo "Label names are available in the next github-script step."
+
 
       - name: Check firmware label
         id: check-firmware
