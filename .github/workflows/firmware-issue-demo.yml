@@ -20,7 +20,7 @@ jobs:
         run: |
           echo 'Labels payload: ${{ toJson(github.event.issue.labels) }}'
 
-      - name: Check firmware label
+            - name: Check firmware label
         id: check-firmware
         uses: actions/github-script@v7
         with:
@@ -32,7 +32,7 @@ jobs:
             core.info(`Firmware label present: ${hasFirmwareLabel}`);
             core.setOutput("has_firmware_label", String(hasFirmwareLabel));
 
-            - name: Debug project fields
+      - name: Debug project fields
         if: steps.check-firmware.outputs.has_firmware_label == 'true'
         uses: actions/github-script@v7
         env:
@@ -77,7 +77,6 @@ jobs:
             });
 
             core.info(JSON.stringify(result, null, 2));
-
 
       - name: Add firmware issue to Project v2
         if: steps.check-firmware.outputs.has_firmware_label == 'true'
