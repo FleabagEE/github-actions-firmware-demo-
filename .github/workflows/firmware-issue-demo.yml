@@ -218,6 +218,13 @@ jobs:
               core.info("Set Priority to Medium");
             }
 
+      - name: Skip automation for opt-out issues
+        if: steps.check-firmware.outputs.has_skip_label == 'true'
+        run: |
+          echo "This issue has the automation:skip label."
+          echo "Skipping project automation by manual override."
+
+
       - name: Skip non-firmware issues
         if: steps.check-firmware.outputs.has_firmware_label != 'true'
         run: |
