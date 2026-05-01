@@ -87,6 +87,37 @@ jobs:
 
             core.info(`Found project: ${project.title} (${project.id})`);
             core.info(`Issue contentId: ${contentId}`);
+            const findItemQuery = `
+              query($login: String!, $number: Int!) {
+                user(login: $login) {
+                  projectV2(number: $number) {
+                    items(first: 50) {
+                      nodes {
+                        id
+                        content {
+                          ... on Issue {
+                            id
+                            title
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+
+            const findItemResult = await github.graphql(findItemQuery, {
+              login: owner,
+              number: projectNumber,
+            });
+
+            const existingItem = findItemResult.user.projectV2.items.nodes.find(
+              node => node.content && node.content.id === contentId
+            );
+
+            core.info(`Existing item found: ${existingItem ? existingItem.id : "none"}`);
+
 
             const addItemMutation = `
               mutation($projectId: ID!, $contentId: ID!) {
