@@ -40,7 +40,6 @@ jobs:
             core.setOutput("has_skip_label", String(hasSkipLabel));
 
             let targetStatus = "Todo";
-
             if (context.payload.issue.state === "closed") {
               targetStatus = "Done";
             } else if (labels.includes("in-progress")) {
@@ -50,9 +49,8 @@ jobs:
             core.info(`Target status for this event: ${targetStatus}`);
             core.setOutput("target_status", targetStatus);
 
-
       - name: Add firmware issue to Project v2 and populate fields
-        if:  steps.check-firmware.outputs.has_firmware_label == 'true' && steps.check-firmware.outputs.has_skip_label != 'true'
+        if: steps.check-firmware.outputs.has_firmware_label == 'true' && steps.check-firmware.outputs.has_skip_label != 'true'
         uses: actions/github-script@v7
         env:
           PROJECT_OWNER: FleabagEE
@@ -101,6 +99,37 @@ jobs:
             core.info(`Issue contentId: ${contentId}`);
             core.info(`Event action for sync logic: ${action}`);
 
+            const findItemQuery = `
+              query($login: String!, $number: Int!) {
+                user(login: $login) {
+                  projectV2(number: $number) {
+                    items(first: 50) {
+                      nodes {
+                        id
+                        content {
+                          ... on Issue {
+                            id
+                            title
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+
+            const findItemResult = await github.graphql(findItemQuery, {
+              login: owner,
+              number: projectNumber,
+            });
+
+            const existingItem = findItemResult.user.projectV2.items.nodes.find(
+              node => node.content && node.content.id === contentId
+            );
+
+            core.info(`Existing item before add/sync: ${existingItem ? existingItem.id : "none"}`);
+
             const updateFieldMutation = `
               mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
                 updateProjectV2ItemFieldValue(
@@ -119,37 +148,6 @@ jobs:
             `;
 
             if (action !== "opened") {
-              const findItemQuery = `
-                query($login: String!, $number: Int!) {
-                  user(login: $login) {
-                    projectV2(number: $number) {
-                      items(first: 50) {
-                        nodes {
-                          id
-                          content {
-                            ... on Issue {
-                              id
-                              title
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              `;
-
-              const findItemResult = await github.graphql(findItemQuery, {
-                login: owner,
-                number: projectNumber,
-              });
-
-              const existingItem = findItemResult.user.projectV2.items.nodes.find(
-                node => node.content && node.content.id === contentId
-              );
-
-              core.info(`Existing item found: ${existingItem ? existingItem.id : "none"}`);
-
               if (!existingItem) {
                 core.setFailed("Existing project item not found for this issue.");
                 return;
@@ -170,6 +168,39 @@ jobs:
               });
 
               core.info(`Synced existing item status for action: ${action}`);
+              return;
+            }
+
+            if (existingItem) {
+              core.info(`Duplicate add avoided. Reusing existing item: ${existingItem.id}`);
+
+              await github.graphql(updateFieldMutation, {
+                projectId: project.id,
+                itemId: existingItem.id,
+                fieldId: STATUS_FIELD_ID,
+                optionId: TODO_OPTION_ID,
+              });
+
+              core.info("Existing opened item found. Status ensured as Todo.");
+
+              if (labels.includes("bug")) {
+                await github.graphql(updateFieldMutation, {
+                  projectId: project.id,
+                  itemId: existingItem.id,
+                  fieldId: PRIORITY_FIELD_ID,
+                  optionId: HIGH_OPTION_ID,
+                });
+                core.info("Set Priority to High on existing item");
+              } else if (labels.includes("enhancement")) {
+                await github.graphql(updateFieldMutation, {
+                  projectId: project.id,
+                  itemId: existingItem.id,
+                  fieldId: PRIORITY_FIELD_ID,
+                  optionId: MEDIUM_OPTION_ID,
+                });
+                core.info("Set Priority to Medium on existing item");
+              }
+
               return;
             }
 
@@ -224,12 +255,9 @@ jobs:
           echo "This issue has the automation:skip label."
           echo "Skipping project automation by manual override."
 
-     
-
-
-
       - name: Skip non-firmware issues
         if: steps.check-firmware.outputs.has_firmware_label != 'true'
         run: |
           echo "This issue does not have the firmware label."
           echo "Skipping automation for now."
+
