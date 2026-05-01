@@ -1,3 +1,52 @@
+name: Firmware Issue Demo
+
+on:
+  issues:
+    types:
+      - opened
+      - labeled
+      - unlabeled
+      - closed
+
+jobs:
+  inspect-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print issue context
+        run: |
+          echo "Firmware issue demo workflow triggered"
+          echo "Event action: ${{ github.event.action }}"
+          echo "Issue title: ${{ github.event.issue.title }}"
+          echo "Issue number: ${{ github.event.issue.number }}"
+          echo "Issue state: ${{ github.event.issue.state }}"
+
+      - name: Print labels summary
+        run: |
+          echo "Label names are available in the next github-script step."
+
+      - name: Check firmware label
+        id: check-firmware
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = (context.payload.issue.labels || []).map(label => label.name);
+            const hasFirmwareLabel = labels.includes("firmware");
+
+            core.info(`Parsed labels: ${labels.join(", ") || "(none)"}`);
+            core.info(`Firmware label present: ${hasFirmwareLabel}`);
+            core.setOutput("has_firmware_label", String(hasFirmwareLabel));
+
+            let targetStatus = "Todo";
+
+            if (context.payload.issue.state === "closed") {
+              targetStatus = "Done";
+            } else if (labels.includes("in-progress")) {
+              targetStatus = "In Progress";
+            }
+
+            core.info(`Target status for this event: ${targetStatus}`);
+            core.setOutput("target_status", targetStatus);
+
       - name: Add firmware issue to Project v2 and populate fields
         if: steps.check-firmware.outputs.has_firmware_label == 'true'
         uses: actions/github-script@v7
@@ -164,3 +213,9 @@
               });
               core.info("Set Priority to Medium");
             }
+
+      - name: Skip non-firmware issues
+        if: steps.check-firmware.outputs.has_firmware_label != 'true'
+        run: |
+          echo "This issue does not have the firmware label."
+          echo "Skipping automation for now."
