@@ -1,54 +1,3 @@
-name: Firmware Issue Demo
-
-on:
-  issues:
-    types:
-      - opened
-      - labeled
-      - unlabeled
-      - closed
-
-jobs:
-  inspect-issue:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Print issue context
-        run: |
-          echo "Firmware issue demo workflow triggered"
-          echo "Event action: ${{ github.event.action }}"
-          echo "Issue title: ${{ github.event.issue.title }}"
-          echo "Issue number: ${{ github.event.issue.number }}"
-          echo "Issue state: ${{ github.event.issue.state }}"
-
-      - name: Print labels summary
-        run: |
-          echo "Labels count: ${{ github.event.issue.labels && github.event.issue.labels.size || 0 }}"
-          echo "Label names are available in the next github-script step."
-
-
-      - name: Check firmware label
-        id: check-firmware
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const labels = (context.payload.issue.labels || []).map(label => label.name);
-            const hasFirmwareLabel = labels.includes("firmware");
-
-            core.info(`Parsed labels: ${labels.join(", ") || "(none)"}`);
-            core.info(`Firmware label present: ${hasFirmwareLabel}`);
-            core.setOutput("has_firmware_label", String(hasFirmwareLabel));
-            let targetStatus = "Todo";
-
-            if (context.payload.issue.state === "closed") {
-              targetStatus = "Done";
-            } else if (labels.includes("in-progress")) {
-              targetStatus = "In Progress";
-            }
-
-            core.info(`Target status for this event: ${targetStatus}`);
-            core.setOutput("target_status", targetStatus);
-
-
       - name: Add firmware issue to Project v2 and populate fields
         if: steps.check-firmware.outputs.has_firmware_label == 'true'
         uses: actions/github-script@v7
@@ -62,6 +11,16 @@ jobs:
             const projectNumber = parseInt(process.env.PROJECT_NUMBER, 10);
             const contentId = context.payload.issue.node_id;
             const labels = (context.payload.issue.labels || []).map(label => label.name);
+            const action = context.payload.action;
+
+            const STATUS_FIELD_ID = "PVTSSF_lAHOB35cU84BVt7yzhRHvjg";
+            const TODO_OPTION_ID = "f75ad846";
+            const IN_PROGRESS_OPTION_ID = "47fc9ee4";
+            const DONE_OPTION_ID = "98236657";
+
+            const PRIORITY_FIELD_ID = "PVTSSF_lAHOB35cU84BVt7yzhRmEhQ";
+            const HIGH_OPTION_ID = "a1209999";
+            const MEDIUM_OPTION_ID = "bbd13c4a";
 
             const projectQuery = `
               query($login: String!, $number: Int!) {
@@ -87,37 +46,79 @@ jobs:
 
             core.info(`Found project: ${project.title} (${project.id})`);
             core.info(`Issue contentId: ${contentId}`);
-            const findItemQuery = `
-              query($login: String!, $number: Int!) {
-                user(login: $login) {
-                  projectV2(number: $number) {
-                    items(first: 50) {
-                      nodes {
-                        id
-                        content {
-                          ... on Issue {
-                            id
-                            title
+            core.info(`Event action for sync logic: ${action}`);
+
+            const updateFieldMutation = `
+              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                updateProjectV2ItemFieldValue(
+                  input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                    fieldId: $fieldId
+                    value: { singleSelectOptionId: $optionId }
+                  }
+                ) {
+                  projectV2Item {
+                    id
+                  }
+                }
+              }
+            `;
+
+            if (action !== "opened") {
+              const findItemQuery = `
+                query($login: String!, $number: Int!) {
+                  user(login: $login) {
+                    projectV2(number: $number) {
+                      items(first: 50) {
+                        nodes {
+                          id
+                          content {
+                            ... on Issue {
+                              id
+                              title
+                            }
                           }
                         }
                       }
                     }
                   }
                 }
+              `;
+
+              const findItemResult = await github.graphql(findItemQuery, {
+                login: owner,
+                number: projectNumber,
+              });
+
+              const existingItem = findItemResult.user.projectV2.items.nodes.find(
+                node => node.content && node.content.id === contentId
+              );
+
+              core.info(`Existing item found: ${existingItem ? existingItem.id : "none"}`);
+
+              if (!existingItem) {
+                core.setFailed("Existing project item not found for this issue.");
+                return;
               }
-            `;
 
-            const findItemResult = await github.graphql(findItemQuery, {
-              login: owner,
-              number: projectNumber,
-            });
+              let statusOptionId = TODO_OPTION_ID;
+              if (context.payload.issue.state === "closed") {
+                statusOptionId = DONE_OPTION_ID;
+              } else if (labels.includes("in-progress")) {
+                statusOptionId = IN_PROGRESS_OPTION_ID;
+              }
 
-            const existingItem = findItemResult.user.projectV2.items.nodes.find(
-              node => node.content && node.content.id === contentId
-            );
+              await github.graphql(updateFieldMutation, {
+                projectId: project.id,
+                itemId: existingItem.id,
+                fieldId: STATUS_FIELD_ID,
+                optionId: statusOptionId,
+              });
 
-            core.info(`Existing item found: ${existingItem ? existingItem.id : "none"}`);
-
+              core.info(`Synced existing item status for action: ${action}`);
+              return;
+            }
 
             const addItemMutation = `
               mutation($projectId: ID!, $contentId: ID!) {
@@ -137,28 +138,11 @@ jobs:
             const itemId = addResult.addProjectV2ItemById.item.id;
             core.info(`Added item to project. Item id: ${itemId}`);
 
-            const updateFieldMutation = `
-              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
-                updateProjectV2ItemFieldValue(
-                  input: {
-                    projectId: $projectId
-                    itemId: $itemId
-                    fieldId: $fieldId
-                    value: { singleSelectOptionId: $optionId }
-                  }
-                ) {
-                  projectV2Item {
-                    id
-                  }
-                }
-              }
-            `;
-
             await github.graphql(updateFieldMutation, {
               projectId: project.id,
               itemId,
-              fieldId: "PVTSSF_lAHOB35cU84BVt7yzhRHvjg",
-              optionId: "f75ad846",
+              fieldId: STATUS_FIELD_ID,
+              optionId: TODO_OPTION_ID,
             });
 
             core.info("Set Status to Todo");
@@ -167,22 +151,16 @@ jobs:
               await github.graphql(updateFieldMutation, {
                 projectId: project.id,
                 itemId,
-                fieldId: "PVTSSF_lAHOB35cU84BVt7yzhRmEhQ",
-                optionId: "a1209999",
+                fieldId: PRIORITY_FIELD_ID,
+                optionId: HIGH_OPTION_ID,
               });
               core.info("Set Priority to High");
             } else if (labels.includes("enhancement")) {
               await github.graphql(updateFieldMutation, {
                 projectId: project.id,
                 itemId,
-                fieldId: "PVTSSF_lAHOB35cU84BVt7yzhRmEhQ",
-                optionId: "bbd13c4a",
+                fieldId: PRIORITY_FIELD_ID,
+                optionId: MEDIUM_OPTION_ID,
               });
               core.info("Set Priority to Medium");
             }
-
-      - name: Skip non-firmware issues
-        if: steps.check-firmware.outputs.has_firmware_label != 'true'
-        run: |
-          echo "This issue does not have the firmware label."
-          echo "Skipping automation for now."
