@@ -37,6 +37,17 @@ jobs:
             core.info(`Parsed labels: ${labels.join(", ") || "(none)"}`);
             core.info(`Firmware label present: ${hasFirmwareLabel}`);
             core.setOutput("has_firmware_label", String(hasFirmwareLabel));
+            let targetStatus = "Todo";
+
+            if (context.payload.issue.state === "closed") {
+              targetStatus = "Done";
+            } else if (labels.includes("in-progress")) {
+              targetStatus = "In Progress";
+            }
+
+            core.info(`Target status for this event: ${targetStatus}`);
+            core.setOutput("target_status", targetStatus);
+
 
       - name: Add firmware issue to Project v2 and populate fields
         if: steps.check-firmware.outputs.has_firmware_label == 'true'
