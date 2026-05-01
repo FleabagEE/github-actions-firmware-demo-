@@ -31,10 +31,13 @@ jobs:
           script: |
             const labels = (context.payload.issue.labels || []).map(label => label.name);
             const hasFirmwareLabel = labels.includes("firmware");
+            const hasSkipLabel = labels.includes("automation:skip");
 
             core.info(`Parsed labels: ${labels.join(", ") || "(none)"}`);
             core.info(`Firmware label present: ${hasFirmwareLabel}`);
+            core.info(`Automation skip label present: ${hasSkipLabel}`);
             core.setOutput("has_firmware_label", String(hasFirmwareLabel));
+            core.setOutput("has_skip_label", String(hasSkipLabel));
 
             let targetStatus = "Todo";
 
@@ -46,6 +49,7 @@ jobs:
 
             core.info(`Target status for this event: ${targetStatus}`);
             core.setOutput("target_status", targetStatus);
+
 
       - name: Add firmware issue to Project v2 and populate fields
         if: steps.check-firmware.outputs.has_firmware_label == 'true'
